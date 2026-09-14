@@ -50,6 +50,7 @@ Self-hosted Logfire instances expose APIs as they are released, so a feature the
 | `logfire_organization` create and list, organization import | v2026-06-03.01 | - |
 | `logfire_organization` read, update, delete (including setting `billing_email` at creation) | v2026-06-25.01 | - |
 | `logfire_gateway_provider` | v2026-08-12.01 | logfire-0.13.40 or newer |
+| Delegating project-bound scopes (`project:gateway_proxy`, `project:read_otlp`, `project:write_otlp`) from an organization-wide key | 2026-09-14 or newer | - |
 
 The instance version appears in the Logfire UI and in the `x-backend-version` response header on releases that provide it.
 
@@ -66,37 +67,64 @@ Each resource states the scopes its calls need. The summary below is the single 
 | `logfire_read_token` | `project:read_token` | A key that can reach the project |
 | `logfire_write_token` | `project:write_token` | A key that can reach the project |
 | `logfire_frontend_application`, `logfire_frontend_application_token` | `project:write_token` / `project:read_token` | A key that can reach the project |
-| `logfire_api_key` | `organization:create_api_key` to create; `organization:read_api_key` / `organization:write_api_key` to list, update, or delete; plus every scope the new key is granted | Organization-wide for non-project scopes; project-scoped for `project:read_otlp`, `project:write_otlp`, `project:gateway_proxy` |
-| `logfire_gateway_api_key` | `organization:create_api_key`, `organization:read_api_key`, `organization:write_api_key`, and `project:gateway_proxy` | Must be project-scoped to the project the keys belong to |
+| `logfire_api_key` | `organization:create_api_key` to create; `organization:read_api_key` / `organization:write_api_key` to list, update, or delete; plus every scope the new key is granted | Organization-wide for organization and project scopes; a project-bound scope (`project:read_otlp`, `project:write_otlp`, `project:gateway_proxy`) on an organization-wide key needs `organization:create_api_key` alongside it (delegation only, Logfire 2026-09-14+) |
+| `logfire_gateway_api_key` | `organization:create_api_key`, `organization:read_api_key`, `organization:write_api_key`, and `project:gateway_proxy` | An organization-wide key holding `organization:create_api_key` and `project:gateway_proxy` (delegation only, Logfire 2026-09-14+), or a project-scoped key for the project |
 | `logfire_gateway_provider` | `organization:read` / `organization:write` | Organization-wide key |
 | `logfire_organization` | `organization:admin` | A key created in the admin-panel organization (self-hosted only) |
 
 Two rules decide what a credential can do:
 
-- **A key can only delegate scopes it holds.** A provider credential creating `logfire_api_key` or `logfire_gateway_api_key` resources must itself carry every scope those keys receive.
+- **A key can only delegate scopes it holds**, with one exception on Logfire 2026-09-14+ — an organization-wide key that also holds `organization:create_api_key` may hold project-bound scopes purely to delegate them. It cannot exercise them itself; it can pass them to the keys it creates.
 - **A key reaches a project when it is organization-wide in the project's organization, or project-scoped to that exact project.** A project-scoped key cannot read or manage any other project, even in the same organization.
 
-### Gateway keys need a project-scoped credential
+### Creating gateway keys
 
-`project:gateway_proxy` can only exist on a project-scoped key, and such a key can only create API keys for its own project. Creating `logfire_gateway_api_key` therefore needs a second provider credential: an organization-wide key for the organization's resources, and a project-scoped key for each project whose gateway keys Terraform manages.
+`project:gateway_proxy` is a project-bound scope: a key can only exercise it when it is bound to a project, which is what gives the gateway a project to resolve providers, budgets, and spend against.
 
-Create the project-scoped key from the **organization-level** API keys page with the project selected; the project's own API keys page rejects organization-level scopes, and without `organization:create_api_key` the key cannot create anything. Grant it `organization:create_api_key`, `organization:read_api_key`, `organization:write_api_key`, and `project:gateway_proxy`.
+On Logfire releases from 2026-09-14, an organization-wide key that also holds `organization:create_api_key` may carry the scope to delegate it. The scope is delegation-only on that key: the key cannot call the gateway itself (it has no project to resolve), but it can create gateway keys for any project in the organization, so one provider credential covers the project, the gateway provider, and the gateway keys:
 
 ```terraform
 provider "logfire" {
-  alias   = "organization"
+  # An organization-wide key carrying organization:create_api_key,
+  # project:gateway_proxy, and the organization scopes used for projects
+  # and gateway providers.
+  api_key = var.organization_api_key
+}
+
+resource "logfire_project" "example" {
+  name = "example"
+}
+
+resource "logfire_gateway_api_key" "example" {
+  name                 = "example-gateway"
+  project_id           = logfire_project.example.id
+  spending_limit_daily = 25
+}
+```
+
+If you would rather the credential that manages gateway keys reach only one project, use a project-scoped operator key and a second provider alias for the `logfire_gateway_api_key` resources. Mint it with `organization:create_api_key`, `organization:read_api_key`, `organization:write_api_key`, and `project:gateway_proxy`, from the **organization-level** API keys page with the project selected: the project's own API keys page rejects the organization-level scopes the key also needs, and without `organization:create_api_key` it cannot create anything. On releases before 2026-09-14 this is the only shape that works.
+
+```terraform
+provider "logfire" {
+  # Creates the project with the organization-wide key.
   api_key = var.organization_api_key
 }
 
 provider "logfire" {
-  alias   = "project"
+  alias = "project"
+  # A project-scoped key for that project, holding organization:create_api_key
+  # and project:gateway_proxy.
   api_key = var.project_scoped_api_key
+}
+
+resource "logfire_project" "example" {
+  name = "example"
 }
 
 resource "logfire_gateway_api_key" "example" {
   provider             = logfire.project
   name                 = "example-gateway"
-  project_id           = "00000000-0000-0000-0000-000000000000"
+  project_id           = logfire_project.example.id
   spending_limit_daily = 25
 }
 ```
@@ -105,7 +133,7 @@ resource "logfire_gateway_api_key" "example" {
 
 - `403 This token is missing the required scope: X.` — the provider credential lacks a scope the call needs. Add `X` to the key and retry.
 - `403 You do not have permission to access this project` — the credential cannot reach the project it was given. The key is either project-scoped to a different project, created in a different organization than the project, or the project no longer exists in the key's organization. The API answers the same way for all three on purpose, so it cannot be used to probe.
-- `403 The ... scope is not granted to the calling credential and cannot be delegated` — the provider credential was asked to mint a key with a scope it does not hold. See "Gateway keys need a project-scoped credential" above; `project:read_otlp`, `project:write_otlp`, and `project:gateway_proxy` cannot be delegated from an organization-wide key.
+- `403 The ... scope is not granted to the calling credential and cannot be delegated` — the provider credential was asked to mint a key with a scope it does not hold. For `project:read_otlp`, `project:write_otlp`, and `project:gateway_proxy`, an organization-wide key may delegate them only if it also holds `organization:create_api_key` and the instance runs Logfire 2026-09-14 or newer; before that, or for a project-scoped operator, see "Creating gateway keys" above.
 - `404 Not Found` from a self-hosted instance — the instance may predate the API being called. See "Self-hosted compatibility" above.
 
 {{ .SchemaMarkdown | trimspace }}
