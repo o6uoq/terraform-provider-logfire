@@ -13,7 +13,7 @@ import (
 )
 
 // versionedStubTransport answers every request with one status and body,
-// optionally adding the x-backend-version header.
+// optionally adding the Logfire-Version header.
 type versionedStubTransport struct {
 	status  int
 	body    string
@@ -23,7 +23,7 @@ type versionedStubTransport struct {
 func (t versionedStubTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	header := make(http.Header)
 	if t.version != "" {
-		header.Set("x-backend-version", t.version)
+		header.Set("Logfire-Version", t.version)
 	}
 	return &http.Response{
 		StatusCode: t.status,
@@ -36,10 +36,15 @@ func (t versionedStubTransport) RoundTrip(req *http.Request) (*http.Response, er
 func TestListGatewayProvidersMissingRouteHint(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name    string
+		name string
+		// version is the Logfire-Version header value the stub returns.
 		version string
+		// reported is the release the message must quote, empty when the
+		// header carries no version meaning and nothing may be quoted.
+		reported string
 	}{
-		{name: "with reported version", version: "e79656b9"},
+		{name: "with reported release", version: "v2026-09-14.01", reported: "v2026-09-14.01"},
+		{name: "with build identity only", version: "e79656b9"},
 		{name: "without reported version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,11 +70,16 @@ func TestListGatewayProvidersMissingRouteHint(t *testing.T) {
 					t.Fatalf("error %q does not mention %q", message, want)
 				}
 			}
-			if tc.version != "" && !strings.Contains(message, tc.version) {
-				t.Fatalf("error %q does not report instance version %q", message, tc.version)
+			if tc.reported != "" && !strings.Contains(message, tc.reported) {
+				t.Fatalf("error %q does not report instance version %q", message, tc.reported)
 			}
-			if tc.version == "" && strings.Contains(message, "reports version") {
-				t.Fatalf("error %q must not claim a version when none was reported", message)
+			if tc.reported == "" {
+				if strings.Contains(message, "reports version") {
+					t.Fatalf("error %q must not claim a version when none was reported", message)
+				}
+				if tc.version != "" && strings.Contains(message, tc.version) {
+					t.Fatalf("error %q must not quote a build identity as a version", message)
+				}
 			}
 		})
 	}
@@ -140,21 +150,34 @@ func TestListAPIKeysMissingRouteHint(t *testing.T) {
 
 func TestAPIErrorCapturesBackendVersion(t *testing.T) {
 	t.Parallel()
-	c, err := NewAPIClient("https://example.invalid", "test-token", &http.Client{
-		Transport: versionedStubTransport{
-			status:  http.StatusInternalServerError,
-			body:    `{"detail":"boom"}`,
-			version: "abc12345",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = c.ListOrganizations(context.Background())
-	if err == nil || IsNotFoundError(err) {
-		t.Fatalf("expected a non-404 error, got %v", err)
-	}
-	if got := BackendVersionFromError(err); got != "abc12345" {
-		t.Fatalf("BackendVersion = %q, want abc12345", got)
+	for _, tc := range []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "release tag", version: "v2026-09-14.01", want: "v2026-09-14.01"},
+		{name: "build identity is unknown", version: "abc12345", want: ""},
+		{name: "no header", version: "", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := NewAPIClient("https://example.invalid", "test-token", &http.Client{
+				Transport: versionedStubTransport{
+					status:  http.StatusInternalServerError,
+					body:    `{"detail":"boom"}`,
+					version: tc.version,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.ListOrganizations(context.Background())
+			if err == nil || IsNotFoundError(err) {
+				t.Fatalf("expected a non-404 error, got %v", err)
+			}
+			if got := BackendVersionFromError(err); got != tc.want {
+				t.Fatalf("BackendVersion = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

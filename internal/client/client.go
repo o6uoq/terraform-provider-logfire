@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,9 +351,10 @@ type APIClient struct {
 type APIError struct {
 	StatusCode int
 	Message    string
-	// BackendVersion is the instance's x-backend-version response header when
-	// the server provides one. Instances old enough to be missing API routes
-	// usually predate the header too, so it is often empty.
+	// BackendVersion is the release tag reported by the instance's
+	// Logfire-Version response header, when the server provides one that is a
+	// release (vYYYY-MM-DD.NN). Builds with no release tag report an image
+	// identity instead, which carries no version meaning and is left empty.
 	BackendVersion string
 }
 
@@ -363,14 +365,31 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("API error: status %d", e.StatusCode)
 }
 
-// backendVersionHeader is the response header carrying the instance version.
-const backendVersionHeader = "x-backend-version"
+// backendVersionHeader is the response header carrying the instance's release
+// tag (vYYYY-MM-DD.NN) when the deployment sets one. Builds with no release tag
+// answer with the image identity instead, which is not a version clients can
+// compare, so it is treated as unknown.
+const backendVersionHeader = "Logfire-Version"
+
+// releaseVersionPattern matches the platform's release tags, e.g. v2026-09-14.01.
+var releaseVersionPattern = regexp.MustCompile(`^v\d{4}-\d{2}-\d{2}\.\d+$`)
+
+// reportedReleaseVersion returns the header value when it is a release tag, and
+// an empty string otherwise (no header, or a build identity that carries no
+// version meaning).
+func reportedReleaseVersion(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if releaseVersionPattern.MatchString(trimmed) {
+		return trimmed
+	}
+	return ""
+}
 
 func newAPIError(resp *http.Response, message string) *APIError {
 	return &APIError{
 		StatusCode:     resp.StatusCode,
 		Message:        message,
-		BackendVersion: resp.Header.Get(backendVersionHeader),
+		BackendVersion: reportedReleaseVersion(resp.Header.Get(backendVersionHeader)),
 	}
 }
 

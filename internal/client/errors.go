@@ -35,10 +35,11 @@ func IsConflictError(err error) bool {
 	return false
 }
 
-// BackendVersionFromError returns the instance version reported by an API
-// error's x-backend-version response header, when the instance provides one.
-// Instances old enough to be missing API routes usually predate the header,
-// so this is often empty.
+// BackendVersionFromError returns the instance's release version reported by an
+// API error's Logfire-Version response header, when the instance provides a
+// release tag. Builds with no release tag answer with the image identity
+// instead, which is not comparable, so this is empty for them; instances old
+// enough to be missing API routes usually predate the header entirely.
 func BackendVersionFromError(err error) string {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
