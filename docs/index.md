@@ -52,7 +52,7 @@ Self-hosted Logfire instances expose APIs as they are released, so a feature the
 | `logfire_gateway_provider` | v2026-08-12.01 | logfire-0.13.40 or newer |
 | Delegating project-bound scopes (`project:gateway_proxy`, `project:read_otlp`, `project:write_otlp`) from an organization-wide key | v2026-09-14.01 | - |
 
-The instance version appears in the Logfire UI and in the `x-backend-version` response header on releases that provide it.
+The instance version appears in the Logfire UI and in the `Logfire-Version` response header on releases that report a release tag; builds that report only an image identity are treated as unknown.
 
 ## Required scopes
 
