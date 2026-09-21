@@ -3,12 +3,12 @@
 page_title: "logfire_project Resource - logfire"
 subcategory: ""
 description: |-
-  Manages a Logfire project.
+  Manages a Logfire project. The credential creates the project in its own organization and must hold organization:create_project.
 ---
 
 # logfire_project (Resource)
 
-Manages a Logfire project.
+Manages a Logfire project. The credential creates the project in its own organization and must hold `organization:create_project`.
 
 ## Example Usage
 
