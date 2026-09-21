@@ -68,7 +68,8 @@ func (r *GatewayAPIKeyResource) Schema(ctx context.Context, req resource.SchemaR
 	resp.Schema = rschema.Schema{
 		MarkdownDescription: "Manages a project-scoped AI Gateway API key (`project:gateway_proxy` scope). " +
 			"Do not confuse this with `logfire_gateway_provider`, which configures an upstream LLM provider credential. " +
-			"The provider credential needs `organization:create_api_key` plus `project:gateway_proxy` delegation.",
+			"The provider credential needs `organization:create_api_key` plus `project:gateway_proxy` delegation; " +
+			"a project-scoped operator key for this is minted from the organization-level API keys page with the project selected.",
 		Attributes: map[string]rschema.Attribute{
 			"id": rschema.StringAttribute{
 				Computed:            true,

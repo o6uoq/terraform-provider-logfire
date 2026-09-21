@@ -50,9 +50,9 @@ Self-hosted Logfire instances expose APIs as they are released, so a feature the
 | `logfire_organization` create and list, organization import | v2026-06-03.01 | - |
 | `logfire_organization` read, update, delete (including setting `billing_email` at creation) | v2026-06-25.01 | - |
 | `logfire_gateway_provider` | v2026-08-12.01 | logfire-0.13.40 or newer |
-| Delegating project-bound scopes (`project:gateway_proxy`, `project:read_otlp`, `project:write_otlp`) from an organization-wide key | v2026-09-14.01 | - |
+| Delegating project-bound scopes (`project:gateway_proxy`, `project:read_otlp`, `project:write_otlp`) from an organization-wide key | v2026-09-14.01 | logfire-0.13.46 or newer |
 
-The instance version appears in the Logfire UI and in the `Logfire-Version` response header on releases that report a release tag; builds that report only an image identity are treated as unknown.
+The instance version appears in the Logfire UI and in the `Logfire-Version` response header on releases that report a release tag; builds that report only an image identity are treated as unknown. Charts from logfire-0.13.45 report the release tag the chart was built from.
 
 ## Required scopes
 
@@ -76,6 +76,14 @@ Two rules decide what a credential can do:
 
 - **A key can only delegate scopes it holds**, with one exception on Logfire v2026-09-14.01+ — an organization-wide key that also holds `organization:create_api_key` may hold project-bound scopes purely to delegate them. It cannot exercise them itself; it can pass them to the keys it creates.
 - **A key reaches a project when it is organization-wide in the project's organization, or project-scoped to that exact project.** A project-scoped key cannot read or manage any other project, even in the same organization.
+
+### Self-hosted bootstrap
+
+The first credential comes from the admin panel; every later one is minted from a key that already holds the scopes it grants:
+
+1. In the admin organization (the one with the admin panel), create an organization-wide key carrying `organization:admin` to manage organizations with `logfire_organization`.
+2. In the organization that owns the projects, create an organization-wide key carrying `organization:create_project`, plus `organization:create_api_key` if Terraform will mint other keys. `logfire_project` creates projects in this key's organization.
+3. For the AI Gateway, use either credential shape under "Creating gateway keys" below. `logfire_gateway_provider` additionally needs `organization:read` / `organization:write`, and every `logfire_gateway_api_key` sets `project_id`.
 
 ### Creating gateway keys
 
