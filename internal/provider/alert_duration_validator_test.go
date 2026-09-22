@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -187,6 +190,77 @@ func TestAlertDurationRoundTripsThroughWireFormat(t *testing.T) {
 
 			if got := durationCompact(back); got != input {
 				t.Fatalf("%q round-tripped via %q to %q; this would diff on every plan", input, wire, got)
+			}
+		})
+	}
+}
+
+// TestAlertSchemaAppliesDurationValidators guards the wiring rather than the
+// validator. Every other test here builds an alertDurationValidator directly,
+// so all of them would still pass if the schema stopped using it, or used it
+// with the wrong bounds. This one pulls the validators off the real resource
+// schema and runs them.
+func TestAlertSchemaAppliesDurationValidators(t *testing.T) {
+	t.Parallel()
+
+	resp := &resource.SchemaResponse{}
+	NewAlertResource().Schema(context.Background(), resource.SchemaRequest{}, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("building the alert schema failed: %v", resp.Diagnostics.Errors())
+	}
+
+	cases := []struct {
+		attribute string
+		accepts   []string
+		rejects   []string
+	}{
+		{
+			attribute: "time_window",
+			accepts:   []string{"20m", "2h", "47m", "7d", "30d"},
+			rejects:   []string{"90d", "90m"},
+		},
+		{
+			attribute: "frequency",
+			accepts:   []string{"1m", "3m", "20m", "24h"},
+			rejects:   []string{"30s", "7d"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.attribute, func(t *testing.T) {
+			t.Parallel()
+
+			attr, ok := resp.Schema.Attributes[tc.attribute].(rschema.StringAttribute)
+			if !ok {
+				t.Fatalf("%s is not a string attribute", tc.attribute)
+			}
+			if len(attr.Validators) == 0 {
+				t.Fatalf("%s has no validators", tc.attribute)
+			}
+
+			run := func(input string) diag.Diagnostics {
+				var diags diag.Diagnostics
+				for _, v := range attr.Validators {
+					req := validator.StringRequest{
+						Path:        path.Root(tc.attribute),
+						ConfigValue: types.StringValue(input),
+					}
+					vResp := &validator.StringResponse{}
+					v.ValidateString(context.Background(), req, vResp)
+					diags.Append(vResp.Diagnostics...)
+				}
+				return diags
+			}
+
+			for _, input := range tc.accepts {
+				if d := run(input); d.HasError() {
+					t.Errorf("schema rejected %s = %q: %v", tc.attribute, input, d.Errors())
+				}
+			}
+			for _, input := range tc.rejects {
+				if d := run(input); !d.HasError() {
+					t.Errorf("schema accepted %s = %q, expected rejection", tc.attribute, input)
+				}
 			}
 		})
 	}
