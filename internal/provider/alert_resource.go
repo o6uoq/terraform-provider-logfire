@@ -33,8 +33,16 @@ type AlertResource struct {
 	client *logclient.APIClient
 }
 
-var alertTimeWindowConstraint = []string{"1m", "2m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h", "7d", "30d"}
-var alertFrequencyConstraint = []string{"1m", "2m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h"}
+// Absolute bounds accepted by the API for alert durations. These are the only
+// limits that hold regardless of the other field; the API additionally caps
+// time_window based on frequency (for example a 30d window needs a daily
+// evaluation) and reports that itself.
+const (
+	alertTimeWindowMin = time.Second
+	alertTimeWindowMax = 30 * 24 * time.Hour
+	alertFrequencyMin  = time.Minute
+	alertFrequencyMax  = 24 * time.Hour
+)
 
 type AlertModel struct {
 	ID           types.String `tfsdk:"id"`
@@ -94,17 +102,18 @@ func (r *AlertResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "SQL / query string used by the alert.",
 			},
 			"time_window": rschema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Lookback window. Allowed values: 1m, 2m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h, 7d, 30d.",
+				Required: true,
+				MarkdownDescription: "Lookback window, as a duration up to `30d` (for example `20m`, `1h30m`, `7d`). " +
+					"The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.",
 				Validators: []validator.String{
-					stringvalidator.OneOf(alertTimeWindowConstraint...),
+					alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax},
 				},
 			},
 			"frequency": rschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Evaluation frequency. Allowed values: 1m, 2m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h.",
+				MarkdownDescription: "Evaluation frequency, as a duration from `1m` to `24h` (for example `5m`, `20m`, `1h`).",
 				Validators: []validator.String{
-					stringvalidator.OneOf(alertFrequencyConstraint...),
+					alertDurationValidator{min: alertFrequencyMin, max: alertFrequencyMax},
 				},
 			},
 			"watermark": rschema.StringAttribute{

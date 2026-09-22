@@ -55,12 +55,12 @@ resource "logfire_alert" "example" {
 ### Required
 
 - `channel_ids` (Set of String) Set of channel IDs to notify.
-- `frequency` (String) Evaluation frequency. Allowed values: 1m, 2m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h.
+- `frequency` (String) Evaluation frequency, as a duration from `1m` to `24h` (for example `5m`, `20m`, `1h`).
 - `name` (String) Alert name (unique per project).
 - `notify_when` (String) Notification rule. Must match API enum.
 - `project_id` (String) Project ID (UUID) used for alert API paths.
 - `query` (String) SQL / query string used by the alert.
-- `time_window` (String) Lookback window. Allowed values: 1m, 2m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h, 7d, 30d.
+- `time_window` (String) Lookback window, as a duration up to `30d` (for example `20m`, `1h30m`, `7d`). The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.
 
 ### Optional
 
