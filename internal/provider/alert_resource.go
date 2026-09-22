@@ -46,9 +46,11 @@ type AlertModel struct {
 	Frequency    types.String `tfsdk:"frequency"`
 	Watermark    types.String `tfsdk:"watermark"`
 	Environments types.Set    `tfsdk:"environments"`
-	ChannelIDs   types.Set    `tfsdk:"channel_ids"`
 	NotifyWhen   types.String `tfsdk:"notify_when"`
 	Active       types.Bool   `tfsdk:"active"`
+	// ChannelAssignments uses the same schema, model and conversion as the
+	// SLO's page and ticket channel assignments.
+	ChannelAssignments types.Set `tfsdk:"channel_assignments"`
 }
 
 func (r *AlertResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -119,11 +121,12 @@ func (r *AlertResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				Optional:            true,
 				MarkdownDescription: "Deployment environments to scope the query to. Empty = all environments (no filter).",
 			},
-			"channel_ids": rschema.SetAttribute{
-				ElementType:         types.StringType,
-				Required:            true,
-				MarkdownDescription: "Set of channel IDs to notify.",
-			},
+			"channel_assignments": channelAssignmentsAttribute(
+				"Channels to notify, each with an optional delivery schedule. Set it to `[]` to notify no channel. "+
+					"This is the same type as `alerts.<tier>.channel_assignments` on `logfire_slo`, "+
+					"so one value (for example a `locals` entry) can configure both.",
+				channelAssignmentsRequired,
+			),
 			"notify_when": rschema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Notification rule. Must match API enum.",
@@ -268,9 +271,11 @@ func alertModelToCreate(ctx context.Context, m *AlertModel) (logclient.AlertCrea
 	if err != nil {
 		return logclient.AlertCreate{}, diag.Diagnostics{diag.NewErrorDiagnostic("Invalid duration", fmt.Sprintf("frequency: %v", err))}
 	}
-	var ch []string
-	if !m.ChannelIDs.IsNull() && !m.ChannelIDs.IsUnknown() {
-		if diags := m.ChannelIDs.ElementsAs(ctx, &ch, false); diags.HasError() {
+	ch := []logclient.ChannelAssignment{}
+	if !m.ChannelAssignments.IsNull() && !m.ChannelAssignments.IsUnknown() {
+		var diags diag.Diagnostics
+		ch, diags = channelAssignmentsToAPI(ctx, m.ChannelAssignments)
+		if diags.HasError() {
 			return logclient.AlertCreate{}, diags
 		}
 	}
@@ -298,8 +303,9 @@ func alertModelToCreate(ctx context.Context, m *AlertModel) (logclient.AlertCrea
 		Frequency:    durToISO8601(fr),
 		Watermark:    durToISO8601(defaultAlertWatermark),
 		Environments: envs,
-		ChannelIDs:   ch,
 		NotifyWhen:   m.NotifyWhen.ValueString(),
+
+		ChannelAssignments: ch,
 	}, nil
 }
 
@@ -345,15 +351,17 @@ func alertReadToModel(ctx context.Context, a *logclient.AlertRead, m *AlertModel
 		m.Environments = envSet
 	}
 
-	ch := make([]string, 0, len(a.Channels))
+	// The alert API lists its channels with each assignment's schedule; it
+	// has no `channel_assignments` read field.
+	assignments := make([]logclient.ChannelAssignment, 0, len(a.Channels))
 	for _, channel := range a.Channels {
-		ch = append(ch, channel.ID)
+		assignments = append(assignments, logclient.ChannelAssignment{ChannelID: channel.ID, ScheduleID: channel.ScheduleID})
 	}
-	set, diags := types.SetValueFrom(ctx, types.StringType, ch)
+	set, diags := channelAssignmentsFromAPI(ctx, assignments)
 	if diags.HasError() {
 		return diags
 	}
-	m.ChannelIDs = set
+	m.ChannelAssignments = set
 	m.NotifyWhen = types.StringValue(a.NotifyWhen)
 	m.Active = types.BoolValue(a.Active)
 	return nil
@@ -391,7 +399,7 @@ func (r *AlertResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Refetch alert to populate channel IDs.
+	// Refetch alert to populate its channels.
 	fresh, _, gerr := r.client.GetAlert(ctx, projectID, out.ID)
 	if gerr != nil {
 		fresh = out
@@ -562,14 +570,13 @@ func (r *AlertResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		}
 	}
 
-	// For sets, send only when we actually have values in the plan.
-	if !plan.ChannelIDs.IsNull() && !plan.ChannelIDs.IsUnknown() {
-		var ids []string
-		if diags := plan.ChannelIDs.ElementsAs(ctx, &ids, false); diags.HasError() {
+	if !plan.ChannelAssignments.IsNull() && !plan.ChannelAssignments.IsUnknown() {
+		assignments, diags := channelAssignmentsToAPI(ctx, plan.ChannelAssignments)
+		if diags.HasError() {
 			resp.Diagnostics.Append(diags...)
 			return
 		}
-		payload.ChannelIDs = &ids
+		payload.ChannelAssignments = &assignments
 	}
 
 	if !plan.NotifyWhen.IsNull() && !plan.NotifyWhen.IsUnknown() {
