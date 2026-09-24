@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 )
 
+var _ validator.String = alertDurationValidator{}
+
 // alertDurationValidator rejects a duration the API rejects: one that does not
 // parse, or one outside the field's absolute bounds. The API also caps
 // time_window relative to frequency, but that is server-side policy and the
