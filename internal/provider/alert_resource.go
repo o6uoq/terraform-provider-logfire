@@ -38,7 +38,7 @@ type AlertResource struct {
 // time_window based on frequency (for example a 30d window needs a daily
 // evaluation) and reports that itself.
 const (
-	alertTimeWindowMin = time.Second
+	alertTimeWindowMin = time.Minute
 	alertTimeWindowMax = 30 * 24 * time.Hour
 	alertFrequencyMin  = time.Minute
 	alertFrequencyMax  = 24 * time.Hour
@@ -105,7 +105,7 @@ func (r *AlertResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			},
 			"time_window": rschema.StringAttribute{
 				Required: true,
-				MarkdownDescription: "Lookback window, as a duration up to `30d` (for example `20m`, `1h30m`, `7d`). " +
+				MarkdownDescription: "Lookback window, as a duration from `1m` to `30d` (for example `20m`, `1h30m`, `7d`). " +
 					"The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.",
 				Validators: []validator.String{
 					alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax},

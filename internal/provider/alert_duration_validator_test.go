@@ -37,7 +37,7 @@ func TestAlertTimeWindowValidatorAcceptsAnyCanonicalDuration(t *testing.T) {
 	// and executed by the API, but the previous preset list rejected them at
 	// terraform validate, before any request was made.
 	for _, input := range []string{
-		"30s", "1m", "2m", "5m", "10m", "15m", "20m", "30m", "47m",
+		"1m", "2m", "5m", "10m", "15m", "20m", "30m", "47m",
 		"1h", "1h30m", "2h", "6h", "12h", "24h", "7d", "30d",
 	} {
 		t.Run(input, func(t *testing.T) {
@@ -74,6 +74,7 @@ func TestAlertDurationValidatorRejectsOutOfRange(t *testing.T) {
 	}{
 		{name: "frequency below minimum", v: alertDurationValidator{min: alertFrequencyMin, max: alertFrequencyMax}, input: "30s"},
 		{name: "frequency above maximum", v: alertDurationValidator{min: alertFrequencyMin, max: alertFrequencyMax}, input: "7d"},
+		{name: "time window below minimum", v: alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax}, input: "30s"},
 		{name: "time window above maximum", v: alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax}, input: "90d"},
 	}
 
@@ -217,7 +218,7 @@ func TestAlertSchemaAppliesDurationValidators(t *testing.T) {
 		{
 			attribute: "time_window",
 			accepts:   []string{"20m", "2h", "47m", "7d", "30d"},
-			rejects:   []string{"90d", "90m"},
+			rejects:   []string{"30s", "90d", "90m"},
 		},
 		{
 			attribute: "frequency",

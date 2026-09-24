@@ -83,7 +83,7 @@ resource "logfire_alert" "example" {
 - `notify_when` (String) Notification rule. Must match API enum.
 - `project_id` (String) Project ID (UUID) used for alert API paths.
 - `query` (String) SQL / query string used by the alert.
-- `time_window` (String) Lookback window, as a duration up to `30d` (for example `20m`, `1h30m`, `7d`). The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.
+- `time_window` (String) Lookback window, as a duration from `1m` to `30d` (for example `20m`, `1h30m`, `7d`). The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.
 
 ### Optional
 

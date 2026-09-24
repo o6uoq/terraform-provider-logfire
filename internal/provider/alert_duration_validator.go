@@ -40,7 +40,7 @@ type alertDurationValidator struct {
 
 func (v alertDurationValidator) Description(_ context.Context) string {
 	return fmt.Sprintf(
-		"must be a duration between %s and %s, written canonically (for example 30s, 20m, 1h30m, 7d)",
+		"must be a duration between %s and %s, written canonically (for example 1m, 20m, 1h30m, 7d)",
 		durationCompact(v.min), durationCompact(v.max),
 	)
 }
