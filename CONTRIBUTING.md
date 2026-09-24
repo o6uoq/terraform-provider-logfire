@@ -42,5 +42,6 @@ deprecates it, and name the release that removes it.
 
 ## Release
 
-Tag `main` with `vX.Y.Z`, push the tag, and verify the GitHub release plus the
-Terraform Registry version. Then update Pulumi and Crossplane from that release.
+Move the `Unreleased` changelog section under the new version. Tag `main` with
+`vX.Y.Z`, push the tag, and verify the GitHub release plus the Terraform
+Registry version. Then update Pulumi and Crossplane from that release.
