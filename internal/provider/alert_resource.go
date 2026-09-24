@@ -45,17 +45,17 @@ const (
 )
 
 type AlertModel struct {
-	ID           types.String `tfsdk:"id"`
-	ProjectID    types.String `tfsdk:"project_id"`
-	Name         types.String `tfsdk:"name"`
-	Description  types.String `tfsdk:"description"`
-	Query        types.String `tfsdk:"query"`
-	TimeWindow   types.String `tfsdk:"time_window"`
-	Frequency    types.String `tfsdk:"frequency"`
-	Watermark    types.String `tfsdk:"watermark"`
-	Environments types.Set    `tfsdk:"environments"`
-	NotifyWhen   types.String `tfsdk:"notify_when"`
-	Active       types.Bool   `tfsdk:"active"`
+	ID           types.String       `tfsdk:"id"`
+	ProjectID    types.String       `tfsdk:"project_id"`
+	Name         types.String       `tfsdk:"name"`
+	Description  types.String       `tfsdk:"description"`
+	Query        types.String       `tfsdk:"query"`
+	TimeWindow   alertDurationValue `tfsdk:"time_window"`
+	Frequency    alertDurationValue `tfsdk:"frequency"`
+	Watermark    types.String       `tfsdk:"watermark"`
+	Environments types.Set          `tfsdk:"environments"`
+	NotifyWhen   types.String       `tfsdk:"notify_when"`
+	Active       types.Bool         `tfsdk:"active"`
 	// ChannelAssignments uses the same schema, model and conversion as
 	// `logfire_slo.alerts.<tier>.channel_assignments`.
 	ChannelAssignments types.Set `tfsdk:"channel_assignments"`
@@ -104,16 +104,20 @@ func (r *AlertResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				MarkdownDescription: "SQL / query string used by the alert.",
 			},
 			"time_window": rschema.StringAttribute{
-				Required: true,
+				CustomType: alertDurationType{},
+				Required:   true,
 				MarkdownDescription: "Lookback window, as a duration from `1m` to `30d` (for example `20m`, `1h30m`, `7d`). " +
-					"The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself.",
+					"The API caps this relative to `frequency` - a longer window requires a less frequent evaluation - and reports that itself. " +
+					"Equivalent spellings are accepted and kept as written.",
 				Validators: []validator.String{
 					alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax},
 				},
 			},
 			"frequency": rschema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Evaluation frequency, as a duration from `1m` to `24h` (for example `5m`, `20m`, `1h`).",
+				CustomType: alertDurationType{},
+				Required:   true,
+				MarkdownDescription: "Evaluation frequency, as a duration from `1m` to `24h` (for example `5m`, `20m`, `1h`). " +
+					"Equivalent spellings are accepted and kept as written.",
 				Validators: []validator.String{
 					alertDurationValidator{min: alertFrequencyMin, max: alertFrequencyMax},
 				},
@@ -255,8 +259,8 @@ func durationCompact(d time.Duration) string {
 
 const defaultAlertWatermark = 10 * time.Second
 
-func parseDurationStr(s types.String) (time.Duration, error) {
-	raw := strings.TrimSpace(s.ValueString())
+func parseDurationText(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
 	// Interpret as Go duration string (e.g. "5m30s", "24h").
 	if d, err := time.ParseDuration(raw); err == nil {
 		return d, nil
@@ -272,11 +276,11 @@ func parseDurationStr(s types.String) (time.Duration, error) {
 }
 
 func alertModelToCreate(ctx context.Context, m *AlertModel) (logclient.AlertCreate, diag.Diagnostics) {
-	tw, err := parseDurationStr(m.TimeWindow)
+	tw, err := parseDurationText(m.TimeWindow.ValueString())
 	if err != nil {
 		return logclient.AlertCreate{}, diag.Diagnostics{diag.NewErrorDiagnostic("Invalid duration", fmt.Sprintf("time_window: %v", err))}
 	}
-	fr, err := parseDurationStr(m.Frequency)
+	fr, err := parseDurationText(m.Frequency.ValueString())
 	if err != nil {
 		return logclient.AlertCreate{}, diag.Diagnostics{diag.NewErrorDiagnostic("Invalid duration", fmt.Sprintf("frequency: %v", err))}
 	}
@@ -331,14 +335,14 @@ func alertReadToModel(ctx context.Context, a *logclient.AlertRead, m *AlertModel
 	m.Query = types.StringValue(a.Query)
 
 	if d, err := iso8601ToDuration(a.TimeWindow); err == nil {
-		m.TimeWindow = types.StringValue(durationCompact(d))
+		m.TimeWindow = newAlertDurationValue(durationCompact(d))
 	} else {
-		m.TimeWindow = types.StringValue("")
+		m.TimeWindow = newAlertDurationValue("")
 	}
 	if d, err := iso8601ToDuration(a.Frequency); err == nil {
-		m.Frequency = types.StringValue(durationCompact(d))
+		m.Frequency = newAlertDurationValue(durationCompact(d))
 	} else {
-		m.Frequency = types.StringValue("")
+		m.Frequency = newAlertDurationValue("")
 	}
 	if d, err := iso8601ToDuration(a.Watermark); err == nil {
 		m.Watermark = types.StringValue(durationCompact(d))
@@ -543,7 +547,7 @@ func (r *AlertResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	}
 
 	if !plan.TimeWindow.IsNull() && !plan.TimeWindow.IsUnknown() {
-		d, err := parseDurationStr(plan.TimeWindow)
+		d, err := parseDurationText(plan.TimeWindow.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("Invalid time_window", err.Error())
 			return
@@ -552,7 +556,7 @@ func (r *AlertResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		payload.TimeWindow = &v
 	}
 	if !plan.Frequency.IsNull() && !plan.Frequency.IsUnknown() {
-		d, err := parseDurationStr(plan.Frequency)
+		d, err := parseDurationText(plan.Frequency.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("Invalid frequency", err.Error())
 			return
