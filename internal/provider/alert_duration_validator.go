@@ -12,17 +12,11 @@ import (
 )
 
 // alertDurationValidator rejects a duration the API rejects: one that does not
-// parse, or one outside the field's absolute bounds.
+// parse, or one outside the field's absolute bounds. The API also caps
+// time_window relative to frequency, but that is server-side policy and the
+// API reports it itself.
 //
-// The API does not expose an enum for these fields. It accepts an arbitrary
-// ISO-8601 duration inside a range, and separately enforces a relationship
-// between time_window and frequency (a longer window requires a less frequent
-// evaluation). That relationship is server-side policy, so it is left to the
-// API to report; mirroring it here would drift the moment the server changes.
-//
-// Equivalent spellings are accepted. The read path rewrites the attribute to
-// its compact form, and alertDurationType's semantic equality keeps the
-// configured spelling when both mean the same duration.
+// Equivalent spellings are accepted; alertDurationType keeps them.
 type alertDurationValidator struct {
 	min time.Duration
 	max time.Duration

@@ -19,12 +19,10 @@ var (
 	_ basetypes.StringValuableWithSemanticEquals = alertDurationValue{}
 )
 
-// alertDurationType and alertDurationValue keep a configured duration's
-// spelling when a new value means the same span of time. The API accepts any
-// equivalent duration, and the read path rewrites the attribute to its compact
-// form, so without semantic equality a config that writes 90m for 1h30m would
-// show a diff on every plan. definitionStringType does the same for dashboard
-// definitions.
+// alertDurationType keeps the spelling a user writes when a new value means
+// the same duration. Read rewrites the attribute to its compact form, so
+// without semantic equality 90m for 1h30m would diff on every plan. It mirrors
+// definitionStringType for dashboard definitions.
 type alertDurationType struct {
 	basetypes.StringType
 }
@@ -80,8 +78,8 @@ func (v alertDurationValue) ToStringValue(context.Context) (basetypes.StringValu
 	return v.StringValue, nil
 }
 
-// StringSemanticEquals compares the durations the two spellings denote, so the
-// framework keeps the prior value when a new value means the same span of time.
+// StringSemanticEquals compares the durations, so the framework keeps the
+// prior value when both spellings mean the same time.
 func (v alertDurationValue) StringSemanticEquals(ctx context.Context, other basetypes.StringValuable) (bool, diag.Diagnostics) {
 	if v.IsNull() || v.IsUnknown() {
 		return other.IsNull() || other.IsUnknown(), nil

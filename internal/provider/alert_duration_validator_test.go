@@ -32,11 +32,9 @@ func TestAlertTimeWindowValidatorAcceptsAnyDurationInRange(t *testing.T) {
 
 	v := alertDurationValidator{min: alertTimeWindowMin, max: alertTimeWindowMax}
 
-	// "20m" and "2h" are the regression this validator fixes: both are accepted
-	// and executed by the API, but the previous preset list rejected them at
-	// terraform validate, before any request was made. The non-canonical
-	// spellings are accepted too; alertDurationType's semantic equality keeps
-	// them in state instead of diffing on every plan.
+	// The old preset list rejected "20m" and "2h" at terraform validate. The
+	// non-canonical spellings are accepted too; alertDurationType keeps them in
+	// state instead of diffing on every plan.
 	for _, input := range []string{
 		"1m", "2m", "5m", "10m", "15m", "20m", "30m", "47m", "90m",
 		"1h", "1h30m", "2h", "6h", "12h", "24h", "2d", "7d", "30d",
@@ -137,10 +135,9 @@ func TestAlertDurationValidatorSkipsNullAndUnknown(t *testing.T) {
 func TestAlertDurationCanonicalValuesRoundTripThroughWireFormat(t *testing.T) {
 	t.Parallel()
 
-	// A canonical value must survive the full provider path:
+	// A canonical value survives the full provider path:
 	// config -> durToISO8601 -> API -> iso8601ToDuration -> durationCompact.
-	// Non-canonical spellings do not round-trip to themselves; the semantic
-	// equality on alertDurationType keeps them in state instead.
+	// Non-canonical spellings do not; alertDurationType keeps them in state.
 	for _, input := range []string{"20m", "47m", "2h", "1h30m", "15m", "24h", "7d", "30d"} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
